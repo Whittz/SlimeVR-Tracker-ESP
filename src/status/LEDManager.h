@@ -46,13 +46,28 @@
 #define SERVER_CONNECTING_INTERVAL 3000
 #define SERVER_CONNECTING_COUNT 2
 
+// Only used on boards with an addressable RGB status LED (LED_BUILTIN aliased
+// to RGB_BUILTIN by the board variant, e.g. ESP32-S3 Supermini). Colors are
+// plain 0-255 RGB; brightness is a global 0-255 scaler applied on top so you
+// don't have to dim every color macro individually.
+#ifndef RGB_LED_BRIGHTNESS
+#define RGB_LED_BRIGHTNESS 32
+#endif
+
+#define COLOR_DEFAULT 255, 255, 255  // used by generic on()/blink()/pattern() calls
+#define COLOR_STANDBY 0, 255, 0  // idle heartbeat pulse
+#define COLOR_LOW_BATTERY 255, 60, 0
+#define COLOR_IMU_ERROR 255, 0, 0
+#define COLOR_WIFI_CONNECTING 0, 60, 255
+#define COLOR_SERVER_CONNECTING 200, 0, 255
+
 namespace SlimeVR {
 enum LEDStage { OFF, ON, GAP, INTERVAL };
 
 class LEDManager {
 public:
 	void setup();
-
+    void SleepySlime();
 	/*!
 	 *  @brief Turns the LED on
 	 */
@@ -79,6 +94,13 @@ public:
 
 	void update();
 
+	/*!
+	 *  @brief Set the color used by the next on()/blink()/pattern() call.
+	 *  Harmless no-op effect on boards without an RGB status LED.
+	 *  @param r,g,b 0-255 color components (pre-brightness-scaling)
+	 */
+	void setColor(uint8_t r, uint8_t g, uint8_t b);
+
 private:
 	uint8_t m_CurrentCount = 0;
 	unsigned long m_Timer = 0;
@@ -89,6 +111,10 @@ private:
 	bool m_Enabled = m_Pin >= 0 && m_Pin < LED_OFF;
 	bool m_On = LED_INVERTED ? LOW : HIGH;
 	bool m_Off = !m_On;
+
+	uint8_t m_ColorR = 255;
+	uint8_t m_ColorG = 255;
+	uint8_t m_ColorB = 255;
 
 	Logging::Logger m_Logger = Logging::Logger("LEDManager");
 };
