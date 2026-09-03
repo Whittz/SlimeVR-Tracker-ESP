@@ -35,6 +35,10 @@
 #include "serial/serialcommands.h"
 #include "status/TPSCounter.h"
 
+#include <Arduino.h>
+#include "esp_sleep.h"
+#include "driver/rtc_io.h"
+
 Timer<> globalTimer;
 SlimeVR::Logging::Logger logger("SlimeVR");
 SlimeVR::Sensors::SensorManager sensorManager;
@@ -67,8 +71,34 @@ bool secondImuActive = false;
 BatteryMonitor battery;
 TPSCounter tpsCounter;
 
+#define PW_BUTTON_PIN 13
+gpio_num_t but_gpio_num = (gpio_num_t)PW_BUTTON_PIN;
+RTC_DATA_ATTR bool SleepySlimeb = false;
+const int BUTTON_PIN = 13;
+const unsigned long LONG_PRESS_MS = 3000;   // hold time for "long press"
+const unsigned long DEBOUNCE_MS   = 50;     // debounce window
+
+bool rawState        = LOW;   // last raw reading
+bool debouncedState  = LOW;   // stable, debounced state
+bool lastDebounced    = LOW;  // debounced state from previous loop iteration
+unsigned long lastChangeTime = 0;
+
+unsigned long pressStartTime = 0;
+bool longPressTriggered = false;
+
 void setup() {
 	Serial.begin(serialBaudRate);
+    rtc_gpio_pulldown_en(but_gpio_num);
+    rtc_gpio_pullup_dis(but_gpio_num);
+    pinMode(PW_BUTTON_PIN, INPUT_PULLDOWN);
+
+    if (SleepySlimeb == true){
+       SleepySlimeb = false;
+       delay(50);
+    }
+      while (digitalRead(PW_BUTTON_PIN) == HIGH) delay(10);
+      delay(500);
+
 	// Enable immediate printing of data by the SerialBuffer for the length
 	// of the setup function
 	SlimeVR::Logging::SerialBuffer::getInstance().enableImmediateMode(true);
@@ -166,7 +196,70 @@ void setup() {
 	SlimeVR::Logging::SerialBuffer::getInstance().enableImmediateMode(false);
 }
 
+void GoToSleep(){
+  if (SleepySlimeb == true){
+	delay(1000);
+    ledManager.SleepySlime();
+     esp_sleep_enable_ext0_wakeup(but_gpio_num, 1); // wake on HIGH
+    delay(1000);
+     esp_deep_sleep_start();
+  }
+}
+
+void onShortPress() {
+  Serial.println("Short press action");
+}
+
+void onLongPress() {
+  SleepySlimeb = true;
+  GoToSleep();
+}
+
 void loop() {
+
+  unsigned long nowbut = millis();
+
+  bool reading = digitalRead(PW_BUTTON_PIN);
+
+  if (reading != rawState) {
+    // Input changed — reset the debounce timer
+    rawState = reading;
+    lastChangeTime = nowbut;
+  }
+
+  if ((nowbut - lastChangeTime) >= DEBOUNCE_MS) {
+    // Reading has been stable long enough — accept it
+    debouncedState = rawState;
+  }
+
+  // --- Edge detection on the debounced state ---
+
+  // Just pressed
+  if (debouncedState == HIGH && lastDebounced == LOW) {
+    pressStartTime = nowbut;
+    longPressTriggered = false;
+  }
+
+  // Held down — check for long-press threshold
+  if (debouncedState == HIGH && lastDebounced == HIGH) {
+    if (!longPressTriggered && (nowbut - pressStartTime >= LONG_PRESS_MS)) {
+      longPressTriggered = true;
+      onLongPress();
+    }
+  }
+
+  // Just released
+  if (debouncedState == LOW && lastDebounced == HIGH) {
+    unsigned long heldFor = nowbut - pressStartTime;
+    if (heldFor < LONG_PRESS_MS) {
+      onShortPress();
+    }
+  }
+
+  lastDebounced = debouncedState;
+
+if (SleepySlimeb == false) {
+
 	tpsCounterBM.before();
 	tpsCounter.update();
 	tpsCounterBM.after();
@@ -234,4 +327,5 @@ void loop() {
 	targetLooptimeBM.after();
 #endif
 	SlimeVR::Debugging::Benchmark::tick();
+}
 }
