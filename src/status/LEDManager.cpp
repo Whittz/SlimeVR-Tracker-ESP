@@ -22,9 +22,18 @@
 */
 
 #include "LEDManager.h"
-
 #include "../GlobalVars.h"
 #include "Status.h"
+
+#include "esp_sleep.h"
+#include "driver/rtc_io.h"
+
+#ifdef RGB_BUILTIN
+#include "esp32-hal-rgb-led.h"
+gpio_num_t ledpin_gpio_num = (gpio_num_t)RGB_BUILTIN;
+#else
+gpio_num_t ledpin_gpio_num = (gpio_num_t)m_Pin;
+#endif
 
 namespace SlimeVR {
 void LEDManager::setup() {
@@ -36,25 +45,58 @@ void LEDManager::setup() {
 	update();
 }
 
-void LEDManager::on() {
-	if (m_Enabled) {
-		digitalWrite(m_Pin, m_On);
+void LEDManager::SleepySlime() {
+		if (!m_Enabled) {
+		return;
 	}
+	delay(50);
+    rtc_gpio_init(ledpin_gpio_num);
+    rtc_gpio_set_level(ledpin_gpio_num, 0);
+    rtc_gpio_hold_en(ledpin_gpio_num);
+}
+
+void LEDManager::on() {
+	if (!m_Enabled) {
+		return;
+	}
+#ifdef RGB_BUILTIN
+	neopixelWrite(
+		m_Pin,
+		(uint16_t)m_ColorR * RGB_LED_BRIGHTNESS / 255,
+		(uint16_t)m_ColorG * RGB_LED_BRIGHTNESS / 255,
+		(uint16_t)m_ColorB * RGB_LED_BRIGHTNESS / 255
+	);
+#else
+	digitalWrite(m_Pin, m_On);
+#endif
 }
 
 void LEDManager::off() {
-	if (m_Enabled) {
-		digitalWrite(m_Pin, m_Off);
+	if (!m_Enabled) {
+		return;
 	}
+#ifdef RGB_BUILTIN
+	neopixelWrite(m_Pin, 0, 0, 0);
+#else
+	digitalWrite(m_Pin, m_Off);
+#endif
+}
+
+void LEDManager::setColor(uint8_t r, uint8_t g, uint8_t b) {
+	m_ColorR = r;
+	m_ColorG = g;
+	m_ColorB = b;
 }
 
 void LEDManager::blink(unsigned long time) {
+	setColor(COLOR_DEFAULT);
 	on();
 	delay(time);
 	off();
 }
 
 void LEDManager::pattern(unsigned long timeon, unsigned long timeoff, int times) {
+	setColor(COLOR_DEFAULT);
 	for (int i = 0; i < times; i++) {
 		blink(timeon);
 		delay(timeoff);
@@ -76,6 +118,7 @@ void LEDManager::update() {
 	unsigned int count = 0;
 
 	if (statusManager.hasStatus(Status::LOW_BATTERY)) {
+		setColor(COLOR_LOW_BATTERY);
 		count = LOW_BATTERY_COUNT;
 		switch (m_CurrentStage) {
 			case ON:
@@ -90,6 +133,7 @@ void LEDManager::update() {
 				break;
 		}
 	} else if (statusManager.hasStatus(Status::IMU_ERROR)) {
+		setColor(COLOR_IMU_ERROR);
 		count = IMU_ERROR_COUNT;
 		switch (m_CurrentStage) {
 			case ON:
@@ -104,6 +148,7 @@ void LEDManager::update() {
 				break;
 		}
 	} else if (statusManager.hasStatus(Status::WIFI_CONNECTING)) {
+		setColor(COLOR_WIFI_CONNECTING);
 		count = WIFI_CONNECTING_COUNT;
 		switch (m_CurrentStage) {
 			case ON:
@@ -118,6 +163,7 @@ void LEDManager::update() {
 				break;
 		}
 	} else if (statusManager.hasStatus(Status::SERVER_CONNECTING)) {
+		setColor(COLOR_SERVER_CONNECTING);
 		count = SERVER_CONNECTING_COUNT;
 		switch (m_CurrentStage) {
 			case ON:
@@ -133,6 +179,7 @@ void LEDManager::update() {
 		}
 	} else {
 #if defined(LED_INTERVAL_STANDBY) && LED_INTERVAL_STANDBY > 0
+		setColor(COLOR_STANDBY);
 		count = 1;
 		switch (m_CurrentStage) {
 			case ON:
@@ -180,4 +227,6 @@ void LEDManager::update() {
 		m_Timer += diff;
 	}
 }
+
+
 }  // namespace SlimeVR
