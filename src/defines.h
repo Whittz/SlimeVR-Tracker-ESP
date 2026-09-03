@@ -74,5 +74,6 @@
 // #define BATTERY_SHIELD_RESISTANCE 0
 // #define BATTERY_SHIELD_R1 10
 // #define BATTERY_SHIELD_R2 40.2
+// #define PW_BUTTON_PIN 13
 
 // ------------------------------
